@@ -10,18 +10,18 @@ export function createApp() {
 
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
-  app.get("/api/platform/config.js", (_req, res) => {
+  const sendHealth = (_req: express.Request, res: express.Response) => res.json({ status: "ok" });
+  const sendPlatformConfig = (_req: express.Request, res: express.Response) => {
     res.set("Cache-Control", "no-store").type("application/javascript").send(publicPlatformScript());
-  });
+  };
+  app.get("/health", sendHealth);
+  app.get("/api/health", sendHealth);
+  app.get("/platform/config.js", sendPlatformConfig);
+  app.get("/api/platform/config.js", sendPlatformConfig);
   registerOAuthRoutes(app);
-  app.use(
-    "/api/trpc",
-    createExpressMiddleware({
-      router: appRouter,
-      createContext,
-    }),
-  );
+  const trpcMiddleware = createExpressMiddleware({ router: appRouter, createContext });
+  app.use("/trpc", trpcMiddleware);
+  app.use("/api/trpc", trpcMiddleware);
 
   return app;
 }
