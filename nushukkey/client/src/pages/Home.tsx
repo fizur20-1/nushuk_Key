@@ -91,8 +91,8 @@ export default function Home() {
   const loadRegistry = useCallback(async (page: number) => {
     try {
       const [statsResponse, recentResponse] = await Promise.all([
-        fetch("/api/registry/stats"),
-        fetch(`/api/registry/recent?page=${page}&pageSize=5`),
+        fetch("/api/registry?operation=stats"),
+        fetch(`/api/registry?operation=recent&page=${page}&pageSize=5`),
       ]);
       if (!statsResponse.ok || !recentResponse.ok) throw new Error("The registry is unavailable right now.");
       const stats = await statsResponse.json() as { total: number };
@@ -126,7 +126,7 @@ export default function Home() {
       return;
     }
     setIsAddingKey(true);
-    void fetch("/api/registry/add", {
+    void fetch("/api/registry?operation=add", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key: normalized }),
