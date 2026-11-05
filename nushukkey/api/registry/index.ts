@@ -3,8 +3,8 @@ import { nanoid } from "nanoid";
 type RegistryItem = { id: number; key: string; createdAt: string; publicRef: string };
 
 const globalStore = globalThis as typeof globalThis & { __nushukRegistry?: RegistryItem[]; __nushukRegistryId?: number };
-const registry = globalStore.__nushukRegistry ?? (globalStore.__nushukRegistry = []);
-if (!globalStore.__nushukRegistryId) globalStore.__nushukRegistryId = 1;
+const registry = globalStore.__nushukRegistry = [];
+globalStore.__nushukRegistryId = 1;
 
 export default function handler(
   req: { method?: string; query?: Record<string, unknown>; body?: { key?: unknown } },
