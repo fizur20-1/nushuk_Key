@@ -183,7 +183,8 @@ export default defineConfig({
   root: path.resolve(import.meta.dirname, "client"),
   publicDir: path.resolve(import.meta.dirname, "client", "public"),
   build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
+    // Vercel serves root-level public/** files through its CDN.
+    outDir: path.resolve(import.meta.dirname, "public"),
     emptyOutDir: true,
   },
   server: {
