@@ -1,6 +1,4 @@
-import { useMemo, useState } from "react";
-import { trpc } from "@/lib/trpc";
-import { TRPCClientError } from "@trpc/client";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowUpRight,
   ChevronLeft,
@@ -75,30 +73,44 @@ function formatDate(value: Date | string) {
   return new Intl.DateTimeFormat("en", { month: "short", day: "numeric" }).format(new Date(value));
 }
 
+type RegistryItem = { id: number; key: string; createdAt: Date | string };
+type RegistryPage = { items: RegistryItem[]; total: number; totalPages: number };
+
 export default function Home() {
   const [keyValue, setKeyValue] = useState("");
   const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null);
   const [keyPage, setKeyPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [recent, setRecent] = useState<RegistryItem[]>([]);
+  const [recentTotal, setRecentTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [registryLoading, setRegistryLoading] = useState(true);
+  const [isAddingKey, setIsAddingKey] = useState(false);
   const [notice, setNotice] = useState<{ type: "success" | "duplicate" | "error"; text: string } | null>(null);
-  const statsQuery = trpc.registry.stats.useQuery(undefined, { staleTime: 15_000 });
-  const recentQuery = trpc.registry.recent.useQuery({ page: keyPage, pageSize: 5 }, { staleTime: 15_000, placeholderData: previous => previous });
-  const addKey = trpc.registry.add.useMutation({
-    onSuccess: result => {
-      setNotice({ type: "success", text: `${result.maskedKey} is now part of the collection.` });
-      setKeyValue("");
-      void statsQuery.refetch();
-      void recentQuery.refetch();
-      setKeyPage(1);
-    },
-    onError: error => {
-      const isDuplicate = error instanceof TRPCClientError && error.data?.code === "CONFLICT";
-      setNotice({ type: isDuplicate ? "duplicate" : "error", text: error.message });
-    },
-  });
 
-  const total = statsQuery.data?.total ?? 0;
-  const recent = recentQuery.data?.items ?? [];
-  const totalPages = recentQuery.data?.totalPages ?? 0;
+  const loadRegistry = useCallback(async (page: number) => {
+    try {
+      const [statsResponse, recentResponse] = await Promise.all([
+        fetch("/api/registry/stats"),
+        fetch(`/api/registry/recent?page=${page}&pageSize=5`),
+      ]);
+      if (!statsResponse.ok || !recentResponse.ok) throw new Error("The registry is unavailable right now.");
+      const stats = await statsResponse.json() as { total: number };
+      const pageData = await recentResponse.json() as RegistryPage;
+      setTotal(stats.total);
+      setRecent(pageData.items);
+      setRecentTotal(pageData.total);
+      setTotalPages(pageData.totalPages);
+    } catch (error) {
+      setNotice({ type: "error", text: error instanceof Error ? error.message : "The registry is unavailable right now." });
+    } finally {
+      setRegistryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRegistry(keyPage);
+  }, [keyPage, loadRegistry]);
   const keyHint = useMemo(() => {
     const trimmed = keyValue.trim();
     if (!trimmed) return "Your Nushuk key";
@@ -113,7 +125,25 @@ export default function Home() {
       setNotice({ type: "error", text: "Enter at least 4 characters to add a key." });
       return;
     }
-    addKey.mutate({ key: normalized });
+    setIsAddingKey(true);
+    void fetch("/api/registry/add", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: normalized }),
+    })
+      .then(async response => {
+        const result = await response.json() as { maskedKey?: string; message?: string };
+        if (!response.ok) {
+          setNotice({ type: response.status === 409 ? "duplicate" : "error", text: result.message ?? "The registry is taking a breath. Please try again." });
+          return;
+        }
+        setNotice({ type: "success", text: `${result.maskedKey} is now part of the collection.` });
+        setKeyValue("");
+        setKeyPage(1);
+        await loadRegistry(1);
+      })
+      .catch(() => setNotice({ type: "error", text: "The registry is taking a breath. Please try again." }))
+      .finally(() => setIsAddingKey(false));
   };
 
   const handleAddCtaClick = (event: React.MouseEvent<HTMLAnchorElement>) => {
@@ -161,7 +191,7 @@ export default function Home() {
 
         <aside className="hero-rail hero-collector reveal reveal-three" aria-label="Nushuk key collection" id="collection">
           <div className="rail-intro"><span>01 / live collection</span><span className="rail-rule" /></div>
-          <div className="collection-total"><span>keys kept</span><strong>{statsQuery.isLoading ? "—" : total.toLocaleString()}</strong><span><span className="status-dot" /> syncing live</span></div>
+          <div className="collection-total"><span>keys kept</span><strong>{registryLoading ? "—" : total.toLocaleString()}</strong><span><span className="status-dot" /> syncing live</span></div>
           <div className="collector-panel" id="add-key">
             <form onSubmit={handleSubmit} className="key-form">
               <label htmlFor="nushuk-key">Nushuk key</label>
@@ -170,12 +200,12 @@ export default function Home() {
                 <input id="nushuk-key" value={keyValue} onChange={event => setKeyValue(event.target.value)} placeholder={keyHint} autoComplete="off" spellCheck={false} maxLength={160} />
                 <span className="input-count">{keyValue.length}/160</span>
               </div>
-              <button className="submit-key" type="submit" disabled={addKey.isPending}>{addKey.isPending ? "Checking the collection…" : "Keep this key unique"}<ArrowUpRight size={17} /></button>
+              <button className="submit-key" type="submit" disabled={isAddingKey}>{isAddingKey ? "Checking the collection…" : "Keep this key unique"}<ArrowUpRight size={17} /></button>
             </form>
             {notice && <div className={`notice notice-${notice.type}`} role="status"><span className="notice-icon">{notice.type === "success" ? <Check size={15} /> : <span>!</span>}</span><span>{notice.text}</span></div>}
             <div className="form-footnote"><LockKeyhole size={14} /> Keys are shared here so the community can copy them easily.</div>
             <div className="key-list" aria-label="Shared Nushuk key list">
-              <div className="key-list-header"><span><span className="list-live-dot" /> shared key list</span><span>{recentQuery.data?.total ?? 0} total</span></div>
+              <div className="key-list-header"><span><span className="list-live-dot" /> shared key list</span><span>{recentTotal} total</span></div>
               {recent.length > 0 ? recent.map(item => (
                 <div className="key-list-row" key={item.id}>
                   <div className="key-list-value"><span className="activity-mark"><Check size={12} /></span><code>{item.key}</code></div>
